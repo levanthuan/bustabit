@@ -35,6 +35,7 @@ def ensure_history_table(conn: Connection) -> None:
       `id` int NOT NULL,
       `busted` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
       `hash` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `game_datetime` datetime DEFAULT NULL,
       `created_at` datetime NOT NULL,
       `updated_at` datetime NOT NULL,
       PRIMARY KEY (`id`)
@@ -50,6 +51,7 @@ def _ensure_case_table(conn: Connection, table_name: str) -> None:
     CREATE TABLE IF NOT EXISTS `{table_name}` (
       `id` int NOT NULL,
       `busted` int NOT NULL,
+      `game_datetime` datetime DEFAULT NULL,
       `created_at` datetime NOT NULL,
       `updated_at` datetime NOT NULL,
       PRIMARY KEY (`id`)

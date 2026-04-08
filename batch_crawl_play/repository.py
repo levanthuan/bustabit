@@ -10,17 +10,25 @@ from .models import GameHistory
 
 def upsert_history(conn: Connection, item: GameHistory, now: datetime) -> None:
     sql = """
-    INSERT INTO `history` (`id`, `busted`, `hash`, `created_at`, `updated_at`)
-    VALUES (%s, %s, %s, %s, %s)
+    INSERT INTO `history` (`id`, `busted`, `hash`, `game_datetime`, `created_at`, `updated_at`)
+    VALUES (%s, %s, %s, %s, %s, %s)
     ON DUPLICATE KEY UPDATE
       `busted` = VALUES(`busted`),
       `hash` = VALUES(`hash`),
+      `game_datetime` = VALUES(`game_datetime`),
       `updated_at` = VALUES(`updated_at`)
     """
     with conn.cursor() as cur:
         cur.execute(
             sql,
-            (item.id, item.busted, item.hash, now, now),
+            (
+                item.id,
+                item.busted,
+                item.hash,
+                item.game_datetime if item.game_datetime is not None else now,
+                now,
+                now,
+            ),
         )
 
 
@@ -53,14 +61,15 @@ def _upsert_case_table(
         return False
 
     sql = f"""
-    INSERT INTO `{table_name}` (`id`, `busted`, `created_at`, `updated_at`)
-    VALUES (%s, %s, %s, %s)
+    INSERT INTO `{table_name}` (`id`, `busted`, `game_datetime`, `created_at`, `updated_at`)
+    VALUES (%s, %s, %s, %s, %s)
     ON DUPLICATE KEY UPDATE
       `busted` = VALUES(`busted`),
+      `game_datetime` = VALUES(`game_datetime`),
       `updated_at` = VALUES(`updated_at`)
     """
     with conn.cursor() as cur:
-        cur.execute(sql, (item.id, busted_int, now, now))
+        cur.execute(sql, (item.id, busted_int, item.game_datetime if item.game_datetime is not None else now, now, now))
     return True
 
 
