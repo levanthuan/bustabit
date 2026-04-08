@@ -17,7 +17,7 @@ from .db import (
 )
 from .models import GameHistory
 from .parser import parse_game_page
-from .playwright_fetcher import FetchError, PlaywrightFetchConfig, fetch_game_html
+from .playwright_fetcher import FetchError, PlaywrightFetchConfig, fetch_game_html_sequence
 from .repository import upsert_case_3, upsert_case_5, upsert_case_7, upsert_case_10, upsert_history
 
 
@@ -35,10 +35,8 @@ class BatchCrawlConfig:
     playwright_timeout_ms: int = 60000
 
 
-def _compute_range(max_id: int | None, start_game_id: int, batch_size: int) -> tuple[int, int]:
-    start = start_game_id if max_id is None else max_id + 1
-    end = start + batch_size - 1
-    return start, end
+def _resolve_start_id(max_id: int | None, start_game_id: int) -> int:
+    return start_game_id if max_id is None else max_id + 1
 
 
 def run_batch(cfg: BatchCrawlConfig) -> None:
@@ -53,8 +51,8 @@ def run_batch(cfg: BatchCrawlConfig) -> None:
         ensure_case_7_table(conn)
         ensure_case_10_table(conn)
         max_id = get_max_history_id(conn)
-        start_id, end_id = _compute_range(max_id, cfg.start_game_id, cfg.batch_size)
-        print(f"[batch_crawl] max_id_in_db={max_id} -> crawl_range={start_id}..{end_id}")
+        start_id = _resolve_start_id(max_id, cfg.start_game_id)
+        print(f"[batch_crawl] max_id_in_db={max_id} -> start_id={start_id} batch_size={cfg.batch_size}")
 
         fetch_cfg = PlaywrightFetchConfig(
             base_domain=cfg.domain,
@@ -66,53 +64,54 @@ def run_batch(cfg: BatchCrawlConfig) -> None:
         ok = 0
         failed: List[Tuple[int, str]] = []
 
-        for game_id in range(start_id, end_id + 1):
-            try:
-                html = fetch_game_html(fetch_cfg, game_id)
-                item: GameHistory = parse_game_page(html, game_id)
-
-                if item.busted is None and item.hash is None and item.game_datetime is None:
-                    failed.append((game_id, "parse_empty"))
-                    print(f"[batch_crawl] warn id={game_id} parse_ra_rong")
+        try:
+            for game_id, html in fetch_game_html_sequence(fetch_cfg, start_id, cfg.batch_size):
+                try:
                     if cfg.debug_save_raw:
                         out_dir = Path("/tmp/batch_crawl_debug")
                         out_dir.mkdir(parents=True, exist_ok=True)
                         (out_dir / f"game_{game_id}.html").write_text(
                             html, encoding="utf-8", errors="ignore"
                         )
-                    continue
 
-                print(
-                    "[batch_crawl] crawled "
-                    f"id={item.id} "
-                    f"busted={item.busted} "
-                    f"hash={item.hash} "
-                    f"game_datetime={item.game_datetime}"
-                )
+                    item: GameHistory = parse_game_page(html, game_id)
 
-                now = datetime.utcnow()
-                upsert_history(conn, item, now=now)
-                inserted: dict = {
-                    "case_3":  upsert_case_3(conn, item, now=now),
-                    "case_5":  upsert_case_5(conn, item, now=now),
-                    "case_7":  upsert_case_7(conn, item, now=now),
-                    "case_10": upsert_case_10(conn, item, now=now),
-                }
-                conn.commit()
-                ok += 1
-                cases = [t for t, v in inserted.items() if v]
-                if cases:
-                    print(f"[batch_crawl] case_tables={cases} id={item.id} busted={item.busted}")
-                if ok % 20 == 0:
-                    print(f"[batch_crawl] progress ok={ok}/{cfg.batch_size} last_id={game_id}")
-            except FetchError as e:
-                conn.rollback()
-                failed.append((game_id, str(e)))
-                print(f"[batch_crawl] fetch_failed id={game_id} err={e}")
-            except Exception as e:
-                conn.rollback()
-                failed.append((game_id, f"{type(e).__name__}: {e}"))
-                print(f"[batch_crawl] parse_or_db_failed id={game_id} err={type(e).__name__}: {e}")
+                    if item.busted is None and item.hash is None and item.game_datetime is None:
+                        failed.append((game_id, "parse_empty"))
+                        print(f"[batch_crawl] warn id={game_id} parse_ra_rong")
+                        continue
+
+                    print(
+                        "[batch_crawl] crawled "
+                        f"id={item.id} "
+                        f"busted={item.busted} "
+                        f"hash={item.hash} "
+                        f"game_datetime={item.game_datetime}"
+                    )
+
+                    now = datetime.utcnow()
+                    upsert_history(conn, item, now=now)
+                    inserted: dict = {
+                        "case_3":  upsert_case_3(conn, item, now=now),
+                        "case_5":  upsert_case_5(conn, item, now=now),
+                        "case_7":  upsert_case_7(conn, item, now=now),
+                        "case_10": upsert_case_10(conn, item, now=now),
+                    }
+                    conn.commit()
+                    ok += 1
+                    cases = [t for t, v in inserted.items() if v]
+                    if cases:
+                        print(f"[batch_crawl] case_tables={cases} id={item.id} busted={item.busted}")
+                    if ok % 20 == 0:
+                        print(f"[batch_crawl] progress ok={ok}/{cfg.batch_size} last_id={game_id}")
+                except Exception as e:
+                    conn.rollback()
+                    failed.append((game_id, f"{type(e).__name__}: {e}"))
+                    print(f"[batch_crawl] parse_or_db_failed id={game_id} err={type(e).__name__}: {e}")
+
+        except FetchError as e:
+            print(f"[batch_crawl] fatal fetch error: {e}")
+            failed.append((-1, str(e)))
 
         print(f"[batch_crawl] done ok={ok} failed={len(failed)}")
         if failed:

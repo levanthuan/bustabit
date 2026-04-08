@@ -19,7 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY . /app
 
 # Khởi động Xvfb (virtual display :99) rồi chạy crawler
-# CMD ["sh", "-c", "Xvfb :99 -screen 0 1280x800x24 -nolisten tcp & sleep 1 && python -m main"]
+CMD ["sh", "-c", "Xvfb :99 -screen 0 1280x800x24 -nolisten tcp & sleep 1 && python -m main"]
 
 # Khởi động Xvfb (virtual display :99) rồi chạy play crawler
-CMD ["sh", "-c", "Xvfb :99 -screen 0 1280x800x24 -nolisten tcp & sleep 1 && python main_play.py"]
+# CMD ["sh", "-c", "Xvfb :99 -screen 0 1280x800x24 -nolisten tcp & sleep 1 && python main_play.py"]

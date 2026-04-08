@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
-from typing import Dict
+from typing import Dict, Generator, Tuple
 from urllib.parse import urlparse
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
@@ -264,3 +265,142 @@ def fetch_game_html(cfg: PlaywrightFetchConfig, game_id: int) -> str:
     if _looks_like_lost_connection(html):
         raise FetchError(f"Trang game bị 'Lost Connection to server' khi tải {url}.")
     return html
+
+
+# -----------------------------------------------------------------------
+# Selector nút Next trên trang game bustabit
+# -----------------------------------------------------------------------
+_NEXT_BUTTON_SELECTOR = "a.chakra-button:has-text('Next')"
+
+
+def fetch_game_html_sequence(
+    cfg: PlaywrightFetchConfig,
+    start_game_id: int,
+    batch_size: int,
+) -> Generator[Tuple[int, str], None, None]:
+    """
+    Generator mở 1 browser duy nhất, navigate đến start_game_id, sau đó click
+    nút "Next" liên tiếp thay vì reload từng page mới.
+
+    Yields: (game_id, html) cho mỗi game theo thứ tự.
+    Dừng khi:
+      - Không còn nút "Next" trên trang
+      - Đã yield đủ batch_size lần
+      - Gặp lỗi nghiêm trọng (Cloudflare, timeout) → raise FetchError
+    """
+    parsed = urlparse(cfg.base_domain)
+    domain_host = parsed.hostname or "bustabit.com"
+
+    with sync_playwright() as p:
+        launch_args = [
+            "--no-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-blink-features=AutomationControlled",
+            "--disable-infobars",
+        ]
+        if cfg.headless:
+            launch_args.append("--headless=new")
+
+        browser = p.chromium.launch(headless=cfg.headless, args=launch_args)
+        context = browser.new_context(
+            user_agent=_REAL_USER_AGENT,
+            viewport={"width": 1280, "height": 800},
+            **_CONTEXT_EXTRAS,
+        )
+        context.add_init_script(_STEALTH_INIT_SCRIPT)
+
+        if cfg.cloudflare_cookie:
+            kv = _parse_cookie_header(cfg.cloudflare_cookie)
+            cookies = [
+                {"name": k, "value": v, "domain": domain_host, "path": "/"}
+                for k, v in kv.items()
+                if k
+            ]
+            if cookies:
+                context.add_cookies(cookies)
+
+        page = context.new_page()
+        if _STEALTH_AVAILABLE:
+            stealth_sync(page)
+
+        try:
+            start_url = _build_game_url(cfg.base_domain, start_game_id)
+            wait_ms = min(max(cfg.timeout_ms // 2, 5000), 30000)
+
+            # --- Navigate đến trang đầu tiên ---
+            page.goto(start_url, wait_until="domcontentloaded", timeout=cfg.timeout_ms)
+            page.wait_for_selector(
+                "input[name='gameHash']", timeout=wait_ms, state="attached"
+            )
+            page.wait_for_function(_WAIT_DATA_READY_JS, timeout=wait_ms)
+            page.wait_for_timeout(800)
+
+            count = 0
+            while count <= batch_size:
+                # Lấy game_id từ URL hiện tại (ví dụ: https://bustabit.com/game/12993561)
+                current_url = page.url
+                m = re.search(r"/game/(\d+)", current_url)
+                if not m:
+                    print(f"[playwright] không parse được game_id từ URL={current_url}, dừng.")
+                    break
+                game_id = int(m.group(1))
+
+                html = page.content() or ""
+
+                if _looks_like_cloudflare_block(html):
+                    raise FetchError(
+                        f"Bị Cloudflare challenge tại game_id={game_id}. "
+                        "Hãy set CLOUDFLARE_COOKIE hợp lệ (cf_clearance)."
+                    )
+                if _looks_like_lost_connection(html):
+                    raise FetchError(
+                        f"Trang game bị 'Lost Connection to server' tại game_id={game_id}."
+                    )
+
+                yield game_id, html
+                count += 1
+
+                if count >= batch_size:
+                    break
+
+                # --- Tìm nút Next ---
+                next_btn = page.query_selector(_NEXT_BUTTON_SELECTOR)
+                if next_btn is None:
+                    print(
+                        f"[playwright] không tìm thấy nút Next tại game_id={game_id} "
+                        f"(đã crawl {count}/{batch_size}), dừng."
+                    )
+                    break
+
+                # --- Click Next và chờ trang mới load ---
+                try:
+                    with page.expect_navigation(
+                        wait_until="domcontentloaded", timeout=cfg.timeout_ms
+                    ):
+                        next_btn.click()
+
+                    page.wait_for_selector(
+                        "input[name='gameHash']", timeout=wait_ms, state="attached"
+                    )
+                    page.wait_for_function(_WAIT_DATA_READY_JS, timeout=wait_ms)
+                    page.wait_for_timeout(500)
+
+                except PlaywrightTimeoutError:
+                    html_after = page.content() or ""
+                    if _looks_like_cloudflare_block(html_after):
+                        raise FetchError(
+                            "Bị Cloudflare challenge sau khi click Next "
+                            f"từ game_id={game_id}."
+                        )
+                    print(
+                        f"[playwright] timeout sau khi click Next từ game_id={game_id}, dừng."
+                    )
+                    break
+
+        except FetchError:
+            raise
+        except PlaywrightTimeoutError as exc:
+            raise FetchError(f"Playwright timeout không mong đợi: {exc}") from exc
+        finally:
+            context.close()
+            browser.close()

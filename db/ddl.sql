@@ -2,6 +2,7 @@ CREATE TABLE `history` (
   `id` int NOT NULL,
   `busted` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `hash` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `game_datetime` datetime DEFAULT NULL,
   `created_at` datetime NOT NULL,
   `updated_at` datetime NOT NULL,
   PRIMARY KEY (`id`)
@@ -13,6 +14,7 @@ CREATE TABLE `case_3` (
   `count` smallint DEFAULT NULL,
   `busted` int NOT NULL,
   `dead_flg` tinyint DEFAULT NULL,
+  `game_datetime` datetime DEFAULT NULL,
   `created_at` datetime NOT NULL,
   `updated_at` datetime NOT NULL,
   PRIMARY KEY (`id`)
@@ -24,6 +26,7 @@ CREATE TABLE `case_5` (
   `count` smallint DEFAULT NULL,
   `busted` int NOT NULL,
   `dead_flg` tinyint DEFAULT NULL,
+  `game_datetime` datetime DEFAULT NULL,
   `created_at` datetime NOT NULL,
   `updated_at` datetime NOT NULL,
   PRIMARY KEY (`id`)
@@ -35,6 +38,7 @@ CREATE TABLE `case_7` (
   `count` smallint DEFAULT NULL,
   `busted` int NOT NULL,
   `dead_flg` tinyint DEFAULT NULL,
+  `game_datetime` datetime DEFAULT NULL,
   `created_at` datetime NOT NULL,
   `updated_at` datetime NOT NULL,
   PRIMARY KEY (`id`)
@@ -46,6 +50,7 @@ CREATE TABLE `case_10` (
   `count` smallint DEFAULT NULL,
   `busted` int NOT NULL,
   `dead_flg` tinyint DEFAULT NULL,
+  `game_datetime` datetime DEFAULT NULL,
   `created_at` datetime NOT NULL,
   `updated_at` datetime NOT NULL,
   PRIMARY KEY (`id`)

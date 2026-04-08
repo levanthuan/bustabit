@@ -17,10 +17,10 @@ def _env_int(name: str, default: int) -> int:
 DOMAIN = _env("BUSTABIT_DOMAIN", "https://bustabit.com")
 
 # Nếu bảng history chưa có bản ghi nào, bắt đầu crawl từ ID này
-START_GAME_ID = _env_int("START_GAME_ID", 10000001) # 12000001 (27/7/2025), 12600001(28/12/2025)
+START_GAME_ID = _env_int("START_GAME_ID", 12900000) # 12000001 (27/7/2025), 12600001(28/12/2025), 12900000(15/03/2026)
 
 # Mỗi lần chạy crawl bao nhiêu URL
-BATCH_SIZE = _env_int("BATCH_SIZE", 200)
+BATCH_SIZE = _env_int("BATCH_SIZE", 5000)
 
 # Timeout HTTP (giây)
 HTTP_TIMEOUT_SECONDS = _env_int("HTTP_TIMEOUT_SECONDS", 30)
