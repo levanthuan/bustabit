@@ -11,7 +11,7 @@ CREATE TABLE `history` (
 
 CREATE TABLE `case_3` (
   `id` int NOT NULL,
-  `count` smallint DEFAULT NULL,
+  `count` int DEFAULT NULL,
   `busted` int NOT NULL,
   `dead_flg` tinyint DEFAULT NULL,
   `game_datetime` datetime DEFAULT NULL,
@@ -23,7 +23,7 @@ CREATE TABLE `case_3` (
 
 CREATE TABLE `case_5` (
   `id` int NOT NULL,
-  `count` smallint DEFAULT NULL,
+  `count` int DEFAULT NULL,
   `busted` int NOT NULL,
   `dead_flg` tinyint DEFAULT NULL,
   `game_datetime` datetime DEFAULT NULL,
@@ -35,7 +35,7 @@ CREATE TABLE `case_5` (
 
 CREATE TABLE `case_7` (
   `id` int NOT NULL,
-  `count` smallint DEFAULT NULL,
+  `count` int DEFAULT NULL,
   `busted` int NOT NULL,
   `dead_flg` tinyint DEFAULT NULL,
   `game_datetime` datetime DEFAULT NULL,
@@ -47,7 +47,7 @@ CREATE TABLE `case_7` (
 
 CREATE TABLE `case_10` (
   `id` int NOT NULL,
-  `count` smallint DEFAULT NULL,
+  `count` int DEFAULT NULL,
   `busted` int NOT NULL,
   `dead_flg` tinyint DEFAULT NULL,
   `game_datetime` datetime DEFAULT NULL,
