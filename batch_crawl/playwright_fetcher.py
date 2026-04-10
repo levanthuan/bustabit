@@ -372,6 +372,16 @@ def fetch_game_html_sequence(
                     )
                     break
 
+                # Chụp hash hiện tại TRƯỚC khi click để detect thay đổi sau khi navigate.
+                # Đây là fix cho race condition: SPA đổi URL trước nhưng DOM render sau,
+                # khiến _WAIT_DATA_READY_JS pass ngay với data cũ của game trước.
+                prev_hash = (
+                    page.eval_on_selector(
+                        "input[name='gameHash']", "el => el.value"
+                    )
+                    or ""
+                ).strip().lower()
+
                 # --- Click Next và chờ trang mới load ---
                 try:
                     with page.expect_navigation(
@@ -382,7 +392,27 @@ def fetch_game_html_sequence(
                     page.wait_for_selector(
                         "input[name='gameHash']", timeout=wait_ms, state="attached"
                     )
-                    page.wait_for_function(_WAIT_DATA_READY_JS, timeout=wait_ms)
+
+                    # Chờ data thật ĐÃ THAY ĐỔI sang game mới (không chỉ non-placeholder).
+                    # Inject prev_hash vào JS để so sánh, tránh yield html của game cũ
+                    # khi URL đã đổi nhưng DOM chưa re-render xong.
+                    escaped_prev_hash = prev_hash.replace("'", "\\'")
+                    wait_changed_js = f"""
+() => {{
+  const hashInput  = document.querySelector("input[name='gameHash']");
+  const bustedNode = document.querySelector(".css-0 .cY-cx");
+  const bodyText   = (document.body?.innerText || "").toLowerCase();
+  const hashVal    = (hashInput?.value || "").trim().toLowerCase();
+  const bustedVal  = (bustedNode?.textContent || "").trim().toLowerCase();
+  const PLACEHOLDERS = ["", "...", "loading...", "loading"];
+  const hashReady   = !PLACEHOLDERS.includes(hashVal);
+  const bustedReady = !PLACEHOLDERS.includes(bustedVal);
+  const noLostConn  = !bodyText.includes("lost connection to server");
+  const hashChanged = hashVal !== '{escaped_prev_hash}';
+  return hashReady && bustedReady && noLostConn && hashChanged;
+}}
+"""
+                    page.wait_for_function(wait_changed_js, timeout=wait_ms)
                     page.wait_for_timeout(500)
 
                 except PlaywrightTimeoutError:

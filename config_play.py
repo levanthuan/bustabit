@@ -28,7 +28,7 @@ WS_DEAD_THRESHOLD_S = _env_int("WS_DEAD_THRESHOLD_S", 60)
 
 # Thời gian chạy tối đa (giây). Hết thời gian sẽ tự dừng toàn bộ tiến trình.
 # Đặt 0 để chạy không giới hạn.
-MAX_RUN_SECONDS = _env_int("MAX_RUN_SECONDS", 3600) # 3600s = 1h
+MAX_RUN_SECONDS = _env_int("MAX_RUN_SECONDS", 0) # 3600s = 1h
 
 # Cookie Cloudflare nếu cần
 CLOUDFLARE_COOKIE = _env("CLOUDFLARE_COOKIE", "")
