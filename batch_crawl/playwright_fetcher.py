@@ -166,22 +166,9 @@ def fetch_game_html(cfg: PlaywrightFetchConfig, game_id: int) -> str:
     domain_host = parsed.hostname or "bustabit.com"
 
     with sync_playwright() as p:
-        # -------------------------------------------------------------------
-        # Giải pháp 4: Headless New – gần giống headful hơn, ít bị detect hơn
-        # -------------------------------------------------------------------
-        launch_args = [
-            "--no-sandbox",
-            "--disable-dev-shm-usage",
-            "--disable-blink-features=AutomationControlled",
-            "--disable-infobars",
-        ]
-        if cfg.headless:
-            # "new" headless mode (Chromium 112+): ít bị phát hiện hơn old
-            launch_args.append("--headless=new")
-
         browser = p.chromium.launch(
             headless=cfg.headless,
-            args=launch_args,
+            args=_build_launch_args(cfg.headless),
         )
 
         context = browser.new_context(
@@ -205,6 +192,8 @@ def fetch_game_html(cfg: PlaywrightFetchConfig, game_id: int) -> str:
                 context.add_cookies(cookies)
 
         page = context.new_page()
+        # Chặn image/media/font trước khi download – không download thì không ghi cache
+        page.route("**/*", _block_non_essential_resources)
 
         # Dùng playwright-stealth library nếu cài được (mạnh hơn script thủ công)
         if _STEALTH_AVAILABLE:
@@ -268,6 +257,44 @@ def fetch_game_html(cfg: PlaywrightFetchConfig, game_id: int) -> str:
 
 
 # -----------------------------------------------------------------------
+# Launch args dùng chung – giảm disk write I/O từ Chromium cache
+# -----------------------------------------------------------------------
+def _build_launch_args(headless: bool) -> list:
+    args = [
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-blink-features=AutomationControlled",
+        "--disable-infobars",
+        # Giới hạn disk cache tại 64 MB thay vì vô hạn.
+        # Không tắt hoàn toàn vì JS/CSS vẫn cần cache để SPA load nhanh.
+        "--disk-cache-size=67108864",
+        "--media-cache-size=1",
+        # Tắt GPU hoàn toàn cho headless – loại bỏ GPU shader cache write
+        # (chiếm vài trăm MB mỗi session, không cần thiết cho data crawl).
+        "--disable-gpu",
+        "--disable-software-rasterizer",
+    ]
+    if headless:
+        args.append("--headless=new")
+    return args
+
+
+# -----------------------------------------------------------------------
+# Route handler: chặn resource không cần thiết trước khi download.
+# Không download → không ghi cache → giảm ~60-70% disk write.
+# Chỉ chặn image/media/font, giữ nguyên JS/CSS/XHR/fetch/websocket.
+# -----------------------------------------------------------------------
+_BLOCKED_RESOURCE_TYPES = {"image", "media", "font"}
+
+
+def _block_non_essential_resources(route) -> None:
+    if route.request.resource_type in _BLOCKED_RESOURCE_TYPES:
+        route.abort()
+    else:
+        route.continue_()
+
+
+# -----------------------------------------------------------------------
 # Selector nút Next trên trang game bustabit
 # -----------------------------------------------------------------------
 _NEXT_BUTTON_SELECTOR = "a.chakra-button:has-text('Next')"
@@ -292,16 +319,7 @@ def fetch_game_html_sequence(
     domain_host = parsed.hostname or "bustabit.com"
 
     with sync_playwright() as p:
-        launch_args = [
-            "--no-sandbox",
-            "--disable-dev-shm-usage",
-            "--disable-blink-features=AutomationControlled",
-            "--disable-infobars",
-        ]
-        if cfg.headless:
-            launch_args.append("--headless=new")
-
-        browser = p.chromium.launch(headless=cfg.headless, args=launch_args)
+        browser = p.chromium.launch(headless=cfg.headless, args=_build_launch_args(cfg.headless))
         context = browser.new_context(
             user_agent=_REAL_USER_AGENT,
             viewport={"width": 1280, "height": 800},
@@ -320,6 +338,8 @@ def fetch_game_html_sequence(
                 context.add_cookies(cookies)
 
         page = context.new_page()
+        # Chặn image/media/font trước khi download – không download thì không ghi cache
+        page.route("**/*", _block_non_essential_resources)
         if _STEALTH_AVAILABLE:
             stealth_sync(page)
 
@@ -372,6 +392,16 @@ def fetch_game_html_sequence(
                     )
                     break
 
+                # Chụp hash hiện tại TRƯỚC khi click để detect thay đổi sau khi navigate.
+                # Đây là fix cho race condition: SPA đổi URL trước nhưng DOM render sau,
+                # khiến _WAIT_DATA_READY_JS pass ngay với data cũ của game trước.
+                prev_hash = (
+                    page.eval_on_selector(
+                        "input[name='gameHash']", "el => el.value"
+                    )
+                    or ""
+                ).strip().lower()
+
                 # --- Click Next và chờ trang mới load ---
                 try:
                     with page.expect_navigation(
@@ -382,8 +412,28 @@ def fetch_game_html_sequence(
                     page.wait_for_selector(
                         "input[name='gameHash']", timeout=wait_ms, state="attached"
                     )
-                    page.wait_for_function(_WAIT_DATA_READY_JS, timeout=wait_ms)
-                    page.wait_for_timeout(500)
+
+                    # Chờ data thật ĐÃ THAY ĐỔI sang game mới (không chỉ non-placeholder).
+                    # Inject prev_hash vào JS để so sánh, tránh yield html của game cũ
+                    # khi URL đã đổi nhưng DOM chưa re-render xong.
+                    escaped_prev_hash = prev_hash.replace("'", "\\'")
+                    wait_changed_js = f"""
+() => {{
+  const hashInput  = document.querySelector("input[name='gameHash']");
+  const bustedNode = document.querySelector(".css-0 .cY-cx");
+  const bodyText   = (document.body?.innerText || "").toLowerCase();
+  const hashVal    = (hashInput?.value || "").trim().toLowerCase();
+  const bustedVal  = (bustedNode?.textContent || "").trim().toLowerCase();
+  const PLACEHOLDERS = ["", "...", "loading...", "loading"];
+  const hashReady   = !PLACEHOLDERS.includes(hashVal);
+  const bustedReady = !PLACEHOLDERS.includes(bustedVal);
+  const noLostConn  = !bodyText.includes("lost connection to server");
+  const hashChanged = hashVal !== '{escaped_prev_hash}';
+  return hashReady && bustedReady && noLostConn && hashChanged;
+}}
+"""
+                    page.wait_for_function(wait_changed_js, timeout=wait_ms)
+                    # page.wait_for_timeout(500)
 
                 except PlaywrightTimeoutError:
                     html_after = page.content() or ""

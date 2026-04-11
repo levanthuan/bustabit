@@ -102,7 +102,7 @@ def run_batch(cfg: BatchCrawlConfig) -> None:
                     cases = [t for t, v in inserted.items() if v]
                     if cases:
                         print(f"[batch_crawl] case_tables={cases} id={item.id} busted={item.busted}")
-                    if ok % 20 == 0:
+                    if ok % 200 == 0:
                         print(f"[batch_crawl] progress ok={ok}/{cfg.batch_size} last_id={game_id}")
                 except Exception as e:
                     conn.rollback()
