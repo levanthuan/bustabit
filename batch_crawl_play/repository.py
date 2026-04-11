@@ -15,7 +15,6 @@ def upsert_history(conn: Connection, item: GameHistory, now: datetime) -> None:
     ON DUPLICATE KEY UPDATE
       `busted` = VALUES(`busted`),
       `hash` = VALUES(`hash`),
-      `game_datetime` = VALUES(`game_datetime`),
       `updated_at` = VALUES(`updated_at`)
     """
     with conn.cursor() as cur:
@@ -65,7 +64,6 @@ def _upsert_case_table(
     VALUES (%s, %s, %s, %s, %s)
     ON DUPLICATE KEY UPDATE
       `busted` = VALUES(`busted`),
-      `game_datetime` = VALUES(`game_datetime`),
       `updated_at` = VALUES(`updated_at`)
     """
     with conn.cursor() as cur:
