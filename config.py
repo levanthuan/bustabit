@@ -21,7 +21,7 @@ START_GAME_ID = _env_int("START_GAME_ID", 12987145) # 12962546 (01/04/2026)
 # 12982547 (6/4/2026) , 12987145 (07/04/2026)
 
 # Mỗi lần chạy crawl bao nhiêu URL
-BATCH_SIZE = _env_int("BATCH_SIZE", 5000)
+BATCH_SIZE = _env_int("BATCH_SIZE", 1000)
 
 # Timeout HTTP (giây)
 HTTP_TIMEOUT_SECONDS = _env_int("HTTP_TIMEOUT_SECONDS", 30)

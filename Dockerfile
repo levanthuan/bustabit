@@ -11,15 +11,15 @@ COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 RUN python -m playwright install --with-deps chromium
 
-# Cài Xvfb để chạy headed browser trong container (không cần màn hình thật)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     xvfb \
+    tini \
     && rm -rf /var/lib/apt/lists/*
 
 COPY . /app
+RUN chmod +x /app/entrypoint.sh
 
-# Khởi động Xvfb (virtual display :99) rồi chạy crawler
-# CMD ["sh", "-c", "Xvfb :99 -screen 0 1280x800x24 -nolisten tcp & sleep 1 && python -m main"]
-
-# Khởi động Xvfb (virtual display :99) rồi chạy play crawler
-CMD ["sh", "-c", "Xvfb :99 -screen 0 1280x800x24 -nolisten tcp & sleep 1 && python main_play.py"]
+# tini (PID 1): forward SIGTERM → entrypoint.sh → exec python
+# entrypoint.sh: dọn lock file cũ → start Xvfb → exec python main_play.py
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["/app/entrypoint.sh"]
