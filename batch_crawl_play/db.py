@@ -34,6 +34,9 @@ def _ensure_case_table(conn: Connection, table_name: str) -> None:
     CREATE TABLE IF NOT EXISTS `{table_name}` (
       `id` int NOT NULL,
       `busted` int NOT NULL,
+      `game_datetime` datetime DEFAULT NULL,
+      `count` int NOT NULL DEFAULT 1,
+      `dead_flg` tinyint DEFAULT NULL,
       `created_at` datetime NOT NULL,
       `updated_at` datetime NOT NULL,
       PRIMARY KEY (`id`)
